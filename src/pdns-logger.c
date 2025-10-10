@@ -238,6 +238,7 @@ int main(int argc, char **argv) {
     safe_free(globals.user);
     safe_free(globals.group);
     safe_free(globals.config_file);
+    safe_free(globals.bind_ip);
 
     return 0;
 }

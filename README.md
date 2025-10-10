@@ -1,8 +1,18 @@
 PDNS-LOGGER
 ===========
 
-** pdns-logger ** is a small daemon that leverages the protobufServer feature of Powerdns Recursor
+**pdns-logger** is a small daemon that leverages the protobufServer feature of Powerdns Recursor
 to log the queries to syslog, to a file and to an sqlite3 database.
+
+This forked version is primarily for my own needs, and has the following changes:
+
+- Security fixes: increased buffer size and fixed buffer overflows, parametized sqlite queries.
+- Adds timestamp to file-based logger, removes QID.
+- Add more DNS record types, fixed lookups of TYPE/RCODE/CLASS.
+- IPv6 listening socket support.
+- Further compiler hardening flags.
+
+**Disclaimer: These changes were largely made with Google Gemini (with human oversight)**. Only file-based logging has actually been tested.
 
 Use cases
 ---------

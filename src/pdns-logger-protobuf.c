@@ -165,7 +165,7 @@ static pdns_status_t socket_start_thread(int socket) {
 
 static pdns_status_t socket_loop(globals_t * conf) {
     int i;
-    struct sockaddr_in client_sa;
+    struct sockaddr_storage client_sa;
     fd_set active_fd_set, read_fd_set;
 
     FD_ZERO(&active_fd_set);
@@ -185,15 +185,30 @@ static pdns_status_t socket_loop(globals_t * conf) {
                 if (i == conf->socket) {
                     /* Connection request on original socket. */
                     int new;
-                    size_t size;
+                    socklen_t size;
+                    char ip[INET6_ADDRSTRLEN];
+                    int port;
 
                     size = sizeof(client_sa);
-                    new = accept(conf->socket, (struct sockaddr *) &client_sa, (socklen_t *) & size);
+                    new = accept(conf->socket, (struct sockaddr *) &client_sa, &size);
 
                     if (new < 0) {
                         fprintf(stderr, "Cannot accept connection from client.\n");
                     } else {
-                        fprintf(stderr, "Connection from host %s, port %d.\n", inet_ntoa(client_sa.sin_addr), ntohs(client_sa.sin_port));
+                        /* Handle both IPv4 and IPv6 clients */
+                        if (client_sa.ss_family == AF_INET) {
+                            struct sockaddr_in *sa = (struct sockaddr_in *)&client_sa;
+                            inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip));
+                            port = ntohs(sa->sin_port);
+                        } else if (client_sa.ss_family == AF_INET6) {
+                            struct sockaddr_in6 *sa = (struct sockaddr_in6 *)&client_sa;
+                            inet_ntop(AF_INET6, &sa->sin6_addr, ip, sizeof(ip));
+                            port = ntohs(sa->sin6_port);
+                        } else {
+                            snprintf(ip, sizeof(ip), "unknown");
+                            port = 0;
+                        }
+                        fprintf(stderr, "Connection from host %s, port %d.\n", ip, port);
                         socket_start_thread(new);
                     }
                 } else {
@@ -209,16 +224,26 @@ static pdns_status_t socket_loop(globals_t * conf) {
 
 static pdns_status_t socket_start(globals_t * conf) {
     int flags;
-    struct sockaddr_in sa;
+    struct sockaddr_in6 sa;
 
-    conf->socket = socket(AF_INET, SOCK_STREAM, 0);
+    /* Create IPv6 socket that can handle both IPv4 and IPv6 */
+    conf->socket = socket(AF_INET6, SOCK_STREAM, 0);
     if (conf->socket == -1) {
         return PDNS_NO;
     }
 
-    sa.sin_family = AF_INET;
-    sa.sin_addr.s_addr = INADDR_ANY;
-    sa.sin_port = htons(conf->bind_port);
+    /* Disable IPV6_V6ONLY to allow IPv4 connections on IPv6 socket */
+    flags = 0;
+    if (setsockopt(conf->socket, IPPROTO_IPV6, IPV6_V6ONLY, &flags, sizeof(flags)) < 0) {
+        fprintf(stderr, "Cannot disable IPV6_V6ONLY\n");
+        close(conf->socket);
+        return PDNS_NO;
+    }
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sin6_family = AF_INET6;
+    sa.sin6_addr = in6addr_any;
+    sa.sin6_port = htons(conf->bind_port);
 
     flags = 1;
     if (setsockopt(conf->socket, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) < 0) {
@@ -227,6 +252,7 @@ static pdns_status_t socket_start(globals_t * conf) {
 
     if (bind(conf->socket, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
         fprintf(stderr, "Bind failed. Error\n");
+        close(conf->socket);
         return PDNS_NO;
     }
 

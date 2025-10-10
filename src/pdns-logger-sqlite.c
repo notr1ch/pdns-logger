@@ -60,7 +60,7 @@ static char autocommit = 1;
     "INSERT INTO logs (" \
     "  ts, querier, id, qtype, qclass, qname, rcode, rcount, rname, rtype, rclass, rttl, rdata, policy " \
     ") VALUES (" \
-    "  %ld, '%q', %d, '%q', '%q', '%q', '%q', %d, '%q', '%q', '%q', %ld, '%q', '%q'  " \
+    "  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? " \
     ")"
 
 #define SQL_CREATE_INDEX \
@@ -147,17 +147,17 @@ static pdns_status_t db_close(void) {
 /* *************************************************************************** */
 
 static void *bg_thread_exec(void *data) {
-    char *sql;
+    sqlite3_stmt *stmt;
 
     (void) data;
 
     bgrunning = 1;
 
     while (bgrunning) {
-        sql = fifo_pop_item(fifo);
-        if (sql != NULL) {
-            db_exec(sql, 1);
-            sqlite3_free(sql);
+        stmt = fifo_pop_item(fifo);
+        if (stmt != NULL) {
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
         }
     }
     return NULL;
@@ -241,32 +241,42 @@ static pdns_status_t logsqlite_rotate(void) {
 
 static pdns_status_t logsqlite_stop(void) {
     bg_thread_stop();
+    safe_free(dbfile);
     return db_close();
 }
 
-/* *INDENT-OFF* */
-#define prepare_sql() \
-    sql = sqlite3_mprintf(SQL_INSERT, \
-        ts, \
-        !zstr(from) ? from : "", \
-        msgid, \
-        qtype ? qtype : "", \
-        qclass ? qclass : "", \
-        qname ? qname : "", \
-        rcode ? rcode : "", \
-        rcount, \
-        rname ? rname : "", \
-        rtype ? rtype : "", \
-        rclass ? rclass : "", \
-        rttl, \
-        rdata ? rdata : "", \
-        policy ? policy : "" \
-    );
-/* *INDENT-ON* */
+
+static void prepare_and_queue_statement(
+    int ts, const char *from, int msgid, const char *qtype, const char *qclass,
+    const char *qname, const char *rcode, int rcount, const char *rname,
+    const char *rtype, const char *rclass, int rttl, const char *rdata,
+    const char *policy) {
+
+    sqlite3_stmt *stmt;
+    int ret = sqlite3_prepare_v2(db, SQL_INSERT, -1, &stmt, NULL);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "sqlite: failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        return;
+    }
+    sqlite3_bind_int(stmt, 1, ts);
+    sqlite3_bind_text(stmt, 2, !zstr(from) ? from : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, msgid);
+    sqlite3_bind_text(stmt, 4, qtype ? qtype : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, qclass ? qclass : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, qname ? qname : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, rcode ? rcode : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 8, rcount);
+    sqlite3_bind_text(stmt, 9, rname ? rname : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 10, rtype ? rtype : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 11, rclass ? rclass : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 12, rttl);
+    sqlite3_bind_text(stmt, 13, rdata ? rdata : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 14, policy ? policy : "", -1, SQLITE_TRANSIENT);
+    fifo_push_item(fifo, stmt);
+}
 
 static pdns_status_t logsqlite_log(void *rawpb) {
-    char *sql = NULL;
-    char ip4[INET6_ADDRSTRLEN];
+    char ip4[INET_ADDRSTRLEN];
     char ip6[INET6_ADDRSTRLEN];
     PBDNSMessage *msg = rawpb;
     PBDNSMessage__DNSQuestion *q;
@@ -375,16 +385,19 @@ static pdns_status_t logsqlite_log(void *rawpb) {
                         rdata = "[Not Supported]";
                     }
                 }
-                prepare_sql();
-                fifo_push_item(fifo, sql);
+                prepare_and_queue_statement(ts, from, msgid, qtype, qclass, qname,
+                                           rcode, rcount, rname, rtype, rclass,
+                                           rttl, rdata, policy);
             }
         } else {
-            prepare_sql();
-            fifo_push_item(fifo, sql);
+            prepare_and_queue_statement(ts, from, msgid, qtype, qclass, qname,
+                                       rcode, rcount, rname, rtype, rclass,
+                                       rttl, rdata, policy);
         }
     } else {
-        prepare_sql();
-        fifo_push_item(fifo, sql);
+        prepare_and_queue_statement(ts, from, msgid, qtype, qclass, qname,
+                                   rcode, rcount, rname, rtype, rclass,
+                                   rttl, rdata, policy);
     }
 
     return PDNS_OK;

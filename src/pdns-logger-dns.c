@@ -74,6 +74,37 @@ const struct dns_nameval dns_typetab[] = {
     {DNS_T_DNAME,       "DNAME"},
     {DNS_T_SINK,        "SINK"},
     {DNS_T_OPT,         "OPT"},
+    {DNS_T_APL,         "APL"},
+    {DNS_T_DS,          "DS"},
+    {DNS_T_SSHFP,       "SSHFP"},
+    {DNS_T_IPSECKEY,    "IPSECKEY"},
+    {DNS_T_RRSIG,       "RRSIG"},
+    {DNS_T_NSEC,        "NSEC"},
+    {DNS_T_DNSKEY,      "DNSKEY"},
+    {DNS_T_DHCID,       "DHCID"},
+    {DNS_T_NSEC3,       "NSEC3"},
+    {DNS_T_NSEC3PARAM,  "NSEC3PARAM"},
+    {DNS_T_TLSA,        "TLSA"},
+    {DNS_T_SMIMEA,      "SMIMEA"},
+    {DNS_T_HIP,         "HIP"},
+    {DNS_T_NINFO,       "NINFO"},
+    {DNS_T_RKEY,        "RKEY"},
+    {DNS_T_TALINK,      "TALINK"},
+    {DNS_T_CDS,         "CDS"},
+    {DNS_T_CDNSKEY,     "CDNSKEY"},
+    {DNS_T_OPENPGPKEY,  "OPENPGPKEY"},
+    {DNS_T_CSYNC,       "CSYNC"},
+    {DNS_T_ZONEMD,      "ZONEMD"},
+    {DNS_T_SVCB,        "SVCB"},
+    {DNS_T_HTTPS,       "HTTPS"},
+    {DNS_T_SPF,         "SPF"},
+    {DNS_T_NID,         "NID"},
+    {DNS_T_L32,         "L32"},
+    {DNS_T_L64,         "L64"},
+    {DNS_T_LP,          "LP"},
+    {DNS_T_EUI48,       "EUI48"},
+    {DNS_T_EUI64,       "EUI64"},
+    {DNS_T_TKEY,        "TKEY"},
     {DNS_T_TSIG,        "TSIG"},
     {DNS_T_IXFR,        "IXFR"},
     {DNS_T_AXFR,        "AXFR"},
@@ -105,22 +136,28 @@ const struct dns_nameval dns_rcodetab[] = {
 /* *INDENT-ON* */
 
 const char *pdns_logger_rcode2p(enum dns_rcode_e i) {
-    if (i < sizeof(dns_rcodetab) / sizeof(dns_rcodetab[0])) {
-        return dns_rcodetab[i].name;
+    for (size_t j = 0; j < sizeof(dns_rcodetab) / sizeof(dns_rcodetab[0]); j++) {
+        if (dns_rcodetab[j].val == (int)i) {
+            return dns_rcodetab[j].name;
+        }
     }
-    return NULL;
+    return "UNKNOWN";
 }
 
 const char *pdns_logger_type2p(enum dns_type_e i) {
-    if (i < sizeof(dns_typetab) / sizeof(dns_typetab[0])) {
-        return dns_typetab[i].name;
+    for (size_t j = 0; j < sizeof(dns_typetab) / sizeof(dns_typetab[0]); j++) {
+        if (dns_typetab[j].val == (int)i) {
+            return dns_typetab[j].name;
+        }
     }
-    return NULL;
+    return "UNKNOWN";
 }
 
 const char *pdns_logger_class2p(enum dns_class_e i) {
-    if (i < sizeof(dns_classtab) / sizeof(dns_classtab[0])) {
-        return dns_classtab[i].name;
+    for (size_t j = 0; j < sizeof(dns_classtab) / sizeof(dns_classtab[0]); j++) {
+        if (dns_classtab[j].val == (int)i) {
+            return dns_classtab[j].name;
+        }
     }
-    return NULL;
+    return "UNKNOWN";
 }

@@ -87,16 +87,14 @@ static pdns_status_t fifo_push(fifo_t * fifo, void *value) {
     item = malloc(sizeof(fifo_item_t));
     if (item != NULL) {
         item->data = value;
+        item->next = NULL;
 
         pthread_mutex_lock(&fifo->lock);
-        if (fifo->tail == NULL && fifo->head == NULL) {
+        if (fifo->tail == NULL) {
             fifo->head = fifo->tail = item;
-        } else if (fifo->tail != NULL || fifo->head != NULL) {
-            /* Should not happen */
-            assert(0);
         } else {
-            item->next = fifo->head;
-            fifo->head = item;
+            fifo->tail->next = item;
+            fifo->tail = item;
         }
         pthread_mutex_unlock(&fifo->lock);
 

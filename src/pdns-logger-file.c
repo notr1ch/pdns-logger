@@ -14,6 +14,7 @@
  *
  */
 
+#include <time.h>
 #include "inih/ini.h"
 #include "pdns-logger.h"
 #include "dnsmessage.pb-c.h"
@@ -100,23 +101,17 @@ static pdns_status_t logfile_stop(void) {
     return PDNS_OK;
 }
 
-#define write_log() \
-    if (fp != NULL) { \
-        fprintf(fp, "%s\n", str); \
-        if (force_flush) { \
-            fflush(fp); \
-        } \
-    }
-
-    //fprintf(stderr, "%s\n", str);
 
 static pdns_status_t logfile_log(void *rawpb) {
     PBDNSMessage *msg = rawpb;
     PBDNSMessage__DNSQuestion *q;
     PBDNSMessage__DNSResponse *r;
-    int sz, pc;
-    char str[1024] = "";
-    char tmp[1024] = "";
+    char str[4096] = "";
+    char *p = str;
+    size_t len = sizeof(str);
+    int ret;
+    time_t timestamp;
+    struct tm tm_utc;
 
     if (disabled) {
         return PDNS_OK;
@@ -132,73 +127,77 @@ static pdns_status_t logfile_log(void *rawpb) {
         }
     }
 
-    sz = sizeof(str) - 1;
-
-    if (msg->has_id) {
-        pc = snprintf(tmp, sizeof(tmp), "QID: %d ", msg->id);
-        strncat(str, tmp, sz);
-        sz -= pc;
+    // Add UTC timestamp prefix
+    if (msg->has_timesec) {
+        timestamp = (time_t)msg->timesec;
+        gmtime_r(&timestamp, &tm_utc);
+        ret = snprintf(p, len, "[%04d-%02d-%02d %02d:%02d:%02d +0000] ",
+                       tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday,
+                       tm_utc.tm_hour, tm_utc.tm_min, tm_utc.tm_sec);
+        if (ret < 0 || (size_t)ret >= len) goto end;
+        p += ret;
+        len -= ret;
     }
 
     if (msg->has_from) {
         if (msg->from.len == 4) {
-            char ip[INET6_ADDRSTRLEN];
-
+            char ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, (const void *) msg->from.data, ip, sizeof(ip));
-
-            pc = snprintf(tmp, sizeof(tmp), "from: %s ", ip);
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "%s ", ip);
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         } else if (msg->from.len == 16) {
             char ip[INET6_ADDRSTRLEN];
-
             inet_ntop(AF_INET6, (const void *) msg->from.data, ip, sizeof(ip));
-
-            pc = snprintf(tmp, sizeof(tmp), "from: %s ", ip);
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "%s ", ip);
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         }
-    }
-
-    if (msg->has_originalrequestorsubnet) {
-        assert(0);
     }
 
     q = msg->question;
     if (q != NULL) {
         if (q->has_qtype) {
-            pc = snprintf(tmp, sizeof(tmp), "qtype: %s ", pdns_logger_type2p(q->qtype));
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "qtype: %s ", pdns_logger_type2p(q->qtype));
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         }
 
         if (q->has_qclass) {
-            pc = snprintf(tmp, sizeof(tmp), "qclass: %s ", pdns_logger_class2p(q->qclass));
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "qclass: %s ", pdns_logger_class2p(q->qclass));
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         }
 
-        pc = snprintf(tmp, sizeof(tmp), "qname: %s ", q->qname);
-        strncat(str, tmp, sz);
-        sz -= pc;
+        ret = snprintf(p, len, "qname: %s ", q->qname);
+        if (ret < 0 || (size_t)ret >= len) goto end;
+        p += ret;
+        len -= ret;
     }
 
     r = msg->response;
     if (r != NULL) {
         if (r->has_rcode) {
-            pc = snprintf(tmp, sizeof(tmp), "rcode: %s ", pdns_logger_rcode2p(r->rcode));
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "rcode: %s ", pdns_logger_rcode2p(r->rcode));
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         }
 
-        pc = snprintf(tmp, sizeof(tmp), "rrcount: %zu ", r->n_rrs);
-        strncat(str, tmp, sz);
-        sz -= pc;
+        ret = snprintf(p, len, "rrcount: %zu ", r->n_rrs);
+        if (ret < 0 || (size_t)ret >= len) goto end;
+        p += ret;
+        len -= ret;
 
         if (!zstr(r->appliedpolicy)) {
-            pc = snprintf(tmp, sizeof(tmp), "policy: '%s' ", r->appliedpolicy);
-            strncat(str, tmp, sz);
-            sz -= pc;
+            ret = snprintf(p, len, "policy: '%s' ", r->appliedpolicy);
+            if (ret < 0 || (size_t)ret >= len) goto end;
+            p += ret;
+            len -= ret;
         }
 
         if (r->n_rrs > 0) {
@@ -208,65 +207,69 @@ static pdns_status_t logfile_log(void *rawpb) {
             for (t = 1; t <= r->n_rrs; t++) {
                 rr = r->rrs[t - 1];
 
-                pc = snprintf(tmp, sizeof(tmp), "rname-%d: %s ", t, rr->name);
-                strncat(str, tmp, sz);
-                sz -= pc;
+                ret = snprintf(p, len, "rname-%d: %s ", t, rr->name);
+                if (ret < 0 || (size_t)ret >= len) goto end;
+                p += ret;
+                len -= ret;
 
                 if (rr->has_type) {
-                    pc = snprintf(tmp, sizeof(tmp), "rtype-%d: %s ", t, pdns_logger_type2p(rr->type));
-                    strncat(str, tmp, sz);
-                    sz -= pc;
+                    ret = snprintf(p, len, "rtype-%d: %s ", t, pdns_logger_type2p(rr->type));
+                    if (ret < 0 || (size_t)ret >= len) goto end;
+                    p += ret;
+                    len -= ret;
                 }
 
                 if (rr->has_class_) {
-                    pc = snprintf(tmp, sizeof(tmp), "rclass-%d: %s ", t, pdns_logger_class2p(rr->class_));
-                    strncat(str, tmp, sz);
-                    sz -= pc;
+                    ret = snprintf(p, len, "rclass-%d: %s ", t, pdns_logger_class2p(rr->class_));
+                    if (ret < 0 || (size_t)ret >= len) goto end;
+                    p += ret;
+                    len -= ret;
                 }
 
                 if (rr->has_ttl) {
-                    pc = snprintf(tmp, sizeof(tmp), "rttl-%d: %d ", t, rr->ttl);
-                    strncat(str, tmp, sz);
-                    sz -= pc;
+                    ret = snprintf(p, len, "rttl-%d: %d ", t, rr->ttl);
+                    if (ret < 0 || (size_t)ret >= len) goto end;
+                    p += ret;
+                    len -= ret;
                 }
 
                 if (rr->has_rdata) {
                     if (rr->has_type && rr->type == 1 && rr->rdata.len == 4) {
-                        char ip[INET6_ADDRSTRLEN];
-
+                        char ip[INET_ADDRSTRLEN];
                         inet_ntop(AF_INET, (const void *) rr->rdata.data, ip, sizeof(ip));
-
-                        pc = snprintf(tmp, sizeof(tmp), "rdata-%d: %s ", t, ip);
-                        strncat(str, tmp, sz);
-                        sz -= pc;
+                        ret = snprintf(p, len, "rdata-%d: %s ", t, ip);
+                        if (ret < 0 || (size_t)ret >= len) goto end;
+                        p += ret;
+                        len -= ret;
                     } else if (rr->has_type && rr->type == 28 && rr->rdata.len == 16) {
                         char ip[INET6_ADDRSTRLEN];
-
                         inet_ntop(AF_INET6, (const void *) rr->rdata.data, ip, sizeof(ip));
-
-                        pc = snprintf(tmp, sizeof(tmp), "rdata-%d: %s ", t, ip);
-                        strncat(str, tmp, sz);
-                        sz -= pc;
+                        ret = snprintf(p, len, "rdata-%d: %s ", t, ip);
+                        if (ret < 0 || (size_t)ret >= len) goto end;
+                        p += ret;
+                        len -= ret;
                     } else if (rr->has_type && ((rr->type == 2) || (rr->type == 5) || (rr->type == 6) || (rr->type == 15))) {
-                        /* CNAME works */
-                        /* NS SOA MX do not seem to pass any data */
-                        pc = snprintf(tmp, sizeof(tmp), "rdata-%d: %s ", t, rr->rdata.data);
-                        strncat(str, tmp, sz);
-                        sz -= pc;
+                        ret = snprintf(p, len, "rdata-%d: %s ", t, rr->rdata.data);
+                        if (ret < 0 || (size_t)ret >= len) goto end;
+                        p += ret;
+                        len -= ret;
                     } else {
-                        pc = snprintf(tmp, sizeof(tmp), "rdata (not supported) ");
-                        strncat(str, tmp, sz);
-                        sz -= pc;
+                        ret = snprintf(p, len, "rdata (not supported) ");
+                        if (ret < 0 || (size_t)ret >= len) goto end;
+                        p += ret;
+                        len -= ret;
                     }
                 }
-
-                write_log();
             }
-        } else {
-            write_log();
         }
-    } else {
-        write_log();
+    }
+
+end:
+    if (fp != NULL) {
+        fprintf(fp, "%s\n", str);
+        if (force_flush) {
+            fflush(fp);
+        }
     }
 
     return PDNS_OK;
