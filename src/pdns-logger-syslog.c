@@ -267,7 +267,7 @@ static pdns_status_t syslog_log(void *rawpb) {
                         p += ret;
                         len -= ret;
                     } else if (rr->has_type && ((rr->type == 2) || (rr->type == 5) || (rr->type == 6) || (rr->type == 15))) {
-                        ret = snprintf(p, len, "rdata-%d: %s ", t, rr->rdata.data);
+                        ret = snprintf(p, len, "rdata-%d: %.*s ", t, (int)rr->rdata.len, (char*)rr->rdata.data);
                         if (ret < 0 || (size_t)ret >= len) goto end;
                         p += ret;
                         len -= ret;

@@ -278,6 +278,7 @@ static void prepare_and_queue_statement(
 static pdns_status_t logsqlite_log(void *rawpb) {
     char ip4[INET_ADDRSTRLEN];
     char ip6[INET6_ADDRSTRLEN];
+    char dnsname[256];
     PBDNSMessage *msg = rawpb;
     PBDNSMessage__DNSQuestion *q;
     PBDNSMessage__DNSResponse *r;
@@ -380,7 +381,10 @@ static pdns_status_t logsqlite_log(void *rawpb) {
                         inet_ntop(AF_INET6, (const void *) rr->rdata.data, ip6, sizeof(ip6));
                         rdata = ip6;
                     } else if (rr->has_type && ((rr->type == 2) || (rr->type == 5) || (rr->type == 6) || (rr->type == 15))) {
-                        rdata = (char *) rr->rdata.data;
+                        size_t copy_len = rr->rdata.len < sizeof(dnsname) - 1 ? rr->rdata.len : sizeof(dnsname) - 1;
+                        memcpy(dnsname, rr->rdata.data, copy_len);
+                        dnsname[copy_len] = '\0';
+                        rdata = dnsname;
                     } else {
                         rdata = "[Not Supported]";
                     }
